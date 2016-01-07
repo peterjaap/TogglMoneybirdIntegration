@@ -84,7 +84,7 @@ class IntegrateCommand extends Command
             $invoiceLine = $this->_moneybird->salesInvoiceDetail();
             list($description,$amount) = explode(' - duration: ', $timeEntry);
             $invoiceLine->description = $description;
-            $invoiceLine->amount = $amount;
+            $invoiceLine->amount = $this->roundTime($amount);
             $invoiceLine->price = $this->_config['hourly_rate'];
             $invoiceLine->period = date('Ymd', strtotime($dateFrom)) . '..' . date('Ymd', strtotime($dateTo));
 
@@ -166,6 +166,19 @@ class IntegrateCommand extends Command
         }
 
         return $invoice->id;
+    }
+
+    private function roundTime($input)
+    {
+        $roundMinutes = $this->_config['round_to'];
+        if(!$roundMinutes) {
+            return $input;
+        } else {
+            $time = strtotime(substr($input,0,5));
+            $round = $roundMinutes*60;
+            $rounded = round($time / $round) * $round;
+            return date("H:i", $rounded);
+        }
     }
 
     private function fetchTaxRateId($moneybirdContactObject)
@@ -334,7 +347,7 @@ class IntegrateCommand extends Command
         $timeEntries = array();
         foreach($timeEntriesResults as $timeEntriesResult) {
             if(!isset($timeEntriesResult['pid']) || $timeEntriesResult['pid'] != $projectId) continue;
-            $timeEntries[$timeEntriesResult['id']] = $timeEntriesResult['description'] . ' - duration: ' . gmdate("H:i:s", $timeEntriesResult['duration']);
+            $timeEntries[$timeEntriesResult['id']] = $timeEntriesResult['description'] . ' - duration: ' . gmdate('H:i:s', $timeEntriesResult['duration']);
         }
 
         if(self::TEST_MODE) {
