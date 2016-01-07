@@ -21,7 +21,6 @@ class IntegrateCommand extends Command
 {
     const CONFIG_FILE = 'config.yml';
     const DEBUG_MODE = false;
-    const TEST_MODE = true;
     const TIMESTAMP_FORMAT = 'd-m-Y';
     const EU_COUNTRIES = array(
         'AT', 'BE', 'BG', 'CY', 'CZ', 'DE', 'DK', 'EE', 'ES', 'FI', 'FR', 'GB', 'GR', 'HU',
@@ -58,7 +57,6 @@ class IntegrateCommand extends Command
 
         /* Choose which time entries to add to the invoice */
         $chosenTimeEntries = $this->getTogglTimeEntries($dateTo,$dateFrom,$projectId);
-        $this->tagTogglTimeEntries($chosenTimeEntries, 'billed');exit;
 
         /* Choose Moneybird contact to invoice to */
         $moneybirdContact = $this->getMoneybirdContact();
@@ -382,7 +380,7 @@ class IntegrateCommand extends Command
         }
 
         $question = new ChoiceQuestion(
-            '<question>Choose which time entries you want to invoice.</question>',
+            '<question>Choose which time entries you want to invoice (comma separated numerical input).</question>',
             array_values($timeEntries),
             0
         );
