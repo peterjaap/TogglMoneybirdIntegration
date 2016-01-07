@@ -21,6 +21,7 @@ class IntegrateCommand extends Command
 {
     const CONFIG_FILE = 'config.yml';
     const DEBUG_MODE = false;
+    const TEST_MODE = true;
     const TIMESTAMP_FORMAT = 'd-m-Y';
 
     protected function configure()
@@ -36,8 +37,30 @@ class IntegrateCommand extends Command
         $this->_config = $this->getConfigValues();
         $this->_toggl = $this->getTogglApi();
 
-        $questionHelper = $this->getHelper('question');
+        $this->_input = $input;
+        $this->_output = $output;
 
+        $this->_questionHelper = $this->getHelper('question');
+
+        /* Choose Toggl workspace */
+        $workspaceId = $this->getTogglWorkspace();
+
+        /* Choose Toggl project */
+        list($projectName, $projectId) = $this->getTogglProject($workspaceId);
+
+        /* Choose date range for Toggl time entries */
+        list($dateTo,$dateFrom) = $this->getTogglDateRange();
+
+        /* Choose which time entries to add to the invoice */
+        $chosenTimeEntries = $this->getTogglTimeEntries($dateTo,$dateFrom,$projectId);
+        print_r($chosenTimeEntries);
+
+        /* Choose Moneybird contact to invoice to */
+        
+
+    }
+
+    private function getTogglWorkspace() {
         $workspacesResults = $this->_toggl->getWorkspaces(array());
 
         $workspaceId = false;
@@ -57,8 +80,8 @@ class IntegrateCommand extends Command
             );
             $question->setErrorMessage('Workspace is invalid.');
 
-            $workspace = $questionHelper->ask($input, $output, $question);
-            $output->writeln('You have just selected workspace: ' . $workspace);
+            $workspace = $this->_questionHelper->ask($this->_input, $this->_output, $question);
+            $this->_output->writeln('You have just selected workspace: ' . $workspace);
 
             foreach ($workspacesResults as $workspaceResult) {
                 if($workspaceResult['name'] == $workspace) {
@@ -71,13 +94,19 @@ class IntegrateCommand extends Command
             die('No workspace(s) found');
         }
 
+        return $workspaceId;
+    }
+
+    private function getTogglProject($workspaceId) {
         $projectsResults = $this->_toggl->getProjects(array('id' => $workspaceId));
         $projects = array();
         foreach($projectsResults as $projectResult) {
             $projects[$projectResult['id']] = $projectResult['name'];
         }
 
-        $projects = array_slice($projects,0,10);
+        if(self::TEST_MODE) {
+            $projects = array_slice($projects, 0, 10);
+        }
 
         $question = new ChoiceQuestion(
             'Choose which project you want to find entries for.',
@@ -86,9 +115,20 @@ class IntegrateCommand extends Command
         );
         $question->setErrorMessage('Project is invalid.');
 
-        $project = $questionHelper->ask($input, $output, $question);
-        $output->writeln('You have just selected project: ' . $project);
+        $project = $this->_questionHelper->ask($this->_input, $this->_output, $question);
+        $this->_output->writeln('You have just selected project: ' . $project);
 
+        $projectId = false;
+        foreach($projectsResults as $projectResult) {
+            if($projectResult['name'] == $project) {
+                $projectId = $projectResult['id'];
+            }
+        }
+
+        return array($project,$projectId);
+    }
+
+    private function getTogglDateRange() {
         $dateFromDefault = date(self::TIMESTAMP_FORMAT, strtotime('-1 month'));
         $question = new Question('From which date do you want to find entries? [' . $dateFromDefault . '] ', $dateFromDefault);
         $question->setValidator(function ($answer) {
@@ -100,7 +140,7 @@ class IntegrateCommand extends Command
 
             return $answer;
         });
-        $dateFrom = $questionHelper->ask($input, $output, $question);
+        $dateFrom = $this->_questionHelper->ask($this->_input, $this->_output, $question);
 
         $dateToDefault = date(self::TIMESTAMP_FORMAT);
         $question = new Question('Until which date do you want to find entries? [' . $dateToDefault . '] ', $dateToDefault);
@@ -113,9 +153,50 @@ class IntegrateCommand extends Command
 
             return $answer;
         });
-        $dateTo = $questionHelper->ask($input, $output, $question);
+        $dateTo = $this->_questionHelper->ask($this->_input, $this->_output, $question);
 
-        $output->writeln('Looking for entries from ' . $dateFrom . ' to ' . $dateTo);
+        $this->_output->writeln('Looking for entries from ' . $dateFrom . ' to ' . $dateTo);
+
+        $dateTo = date('c', strtotime($dateTo . ' 23:59'));
+        $dateFrom = date('c', strtotime($dateFrom));
+
+        return array($dateTo, $dateFrom);
+    }
+
+    private function getTogglTimeEntries($dateTo, $dateFrom, $projectId) {
+        $timeEntriesResults = $this->_toggl->getTimeEntries(array(
+            'start_date' => $dateFrom,
+            'end_date' => $dateTo,
+        ));
+
+        $timeEntries = array();
+        foreach($timeEntriesResults as $timeEntriesResult) {
+            if(!isset($timeEntriesResult['pid']) || $timeEntriesResult['pid'] != $projectId) continue;
+            $timeEntries[$timeEntriesResult['id']] = $timeEntriesResult['description'] . ' - duration: ' . gmdate("H:i:s", $timeEntriesResult['duration']);
+        }
+
+        if(self::TEST_MODE) {
+            $timeEntries = array_slice($timeEntries, 0, 20);
+        }
+
+        $question = new ChoiceQuestion(
+            'Choose which time entries you want to invoice.',
+            array_values($timeEntries),
+            0
+        );
+        $question->setMultiselect(true);
+        $question->setErrorMessage('Time entry input is invalid.');
+
+        $timeEntryValues = $this->_questionHelper->ask($this->_input, $this->_output, $question);
+        $chosenTimeEntries = array_intersect($timeEntries, $timeEntryValues);
+
+        foreach($chosenTimeEntries as $chosenTimeEntry) {
+            if(stripos($chosenTimeEntry, 'fix')!==false || stripos($chosenTimeEntry, 'bug')!==false) {
+                $this->_output->writeln('Caution; you are about to invoice a time entry that indicates it is a bug fix: ' . $chosenTimeEntry);
+            }
+        }
+
+        return $chosenTimeEntries;
     }
 
     private function getConfigValues()
