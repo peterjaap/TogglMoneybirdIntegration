@@ -54,12 +54,43 @@ class IntegrateCommand extends Command
 
         /* Choose which time entries to add to the invoice */
         $chosenTimeEntries = $this->getTogglTimeEntries($dateTo,$dateFrom,$projectId);
-        print_r($chosenTimeEntries);
 
         /* Choose Moneybird contact to invoice to */
         $moneybirdContact = $this->getMoneybirdContact();
 
-        var_dump($moneybirdContact);
+        $this->createInvoice($moneybirdContact, $chosenTimeEntries, $dateTo, $dateFrom);
+    }
+
+    private function createInvoice($moneybirdContact, $chosenTimeEntries, $dateTo, $dateFrom)
+    {
+        $invoice = $this->_moneybird->salesInvoice();
+
+        $invoice->{'contact_id'} = $moneybirdContact['id'];
+
+        $moneybirdInvoiceLines = array();
+        foreach($chosenTimeEntries as $timeEntry) {
+            $invoiceLine = $this->_moneybird->salesInvoiceDetail();
+            list($description,$amount) = explode(' - duration: ', $timeEntry);
+            $invoiceLine->description = $description;
+            $invoiceLine->amount = $amount;
+            $invoiceLine->price = 85;
+            $moneybirdInvoiceLines[] = $invoiceLine;
+        }
+
+        $invoice->details = $moneybirdInvoiceLines;
+
+        try {
+            $invoice->save();
+            $url = $invoice->url;
+            $urlParts = explode('/', $url);
+            $urlParts = array_slice($urlParts,0,-2);
+            $url = implode('/', $urlParts) . '/' . $invoice->id;
+            $this->_output->writeln('Invoice succesfully saved: ' . $url);
+        } catch (Exception $e) {
+            die('Could not set invoice: ' . $e->getMessage());
+        }
+
+        return $invoice->id;
     }
 
     private function getTogglWorkspace() {
@@ -115,6 +146,7 @@ class IntegrateCommand extends Command
             array_values($projects),
             0
         );
+        $question->setAutocompleterValues(array_values($projects));
         $question->setErrorMessage('Project is invalid.');
 
         $project = $this->_questionHelper->ask($this->_input, $this->_output, $question);
@@ -203,7 +235,51 @@ class IntegrateCommand extends Command
 
     private function getMoneybirdContact()
     {
-        
+        $contactIds = $this->_moneybird->contact()->listVersions();
+        $chunks = array_chunk($contactIds,100,true);
+        foreach($chunks as $chunk) {
+            $ids = array();
+            foreach($chunk as $contact) {
+                $ids[] = $contact->id;
+            }
+            $contactsApiResults = $this->_moneybird->contact()->getVersions($ids);
+            foreach($contactsApiResults as $contactApiResult) {
+                if($contactApiResult->company_name) {
+                    $name = $contactApiResult->company_name;
+                    if(
+                        isset($contactApiResult->firstname)
+                        && strlen($contactApiResult->firstname)>0
+                        && isset($contactApiResult->lastname)
+                        && strlen($contactApiResult->lastname)>0
+                    ) {
+                        $name .= ' (' . $contactApiResult->firstname . ' ' . $contactApiResult->lastname . ')';
+                    }
+                } else {
+                    $name = $contactApiResult->firstname . ' ' . $contactApiResult->lastname;
+                }
+                $contactsResults[$contactApiResult->id] = $name;
+            }
+        }
+
+        $question = new ChoiceQuestion(
+            'Choose which contact you want to create the invoice for.',
+            array_unique(array_values($contactsResults)),
+            0
+        );
+        $question->setErrorMessage('Contact is invalid.');
+        $question->setAutocompleterValues($contactsResults);
+
+        $contact = $this->_questionHelper->ask($this->_input, $this->_output, $question);
+        $this->_output->writeln('You have just selected contact: ' . $contact);
+
+        $contactId = false;
+        foreach($contactsResults as $contactId=>$contactName) {
+            if($contactName == $contact) {
+                break;
+            }
+        }
+
+        return array('name' => $contactName, 'id' => $contactId);
     }
 
     private function getConfigValues()

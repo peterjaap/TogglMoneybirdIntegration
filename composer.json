@@ -4,6 +4,5 @@
         "symfony/console": "^3.0",
         "ajt/guzzle-toggl": "^0.10.0",
         "symfony/yaml": "^3.0",
-        "league/oauth2-client": "^1.1"
     }
 }
