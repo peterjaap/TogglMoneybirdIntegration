@@ -23,6 +23,10 @@ class IntegrateCommand extends Command
     const DEBUG_MODE = false;
     const TEST_MODE = true;
     const TIMESTAMP_FORMAT = 'd-m-Y';
+    const EU_COUNTRIES = array(
+        'AT', 'BE', 'BG', 'CY', 'CZ', 'DE', 'DK', 'EE', 'ES', 'FI', 'FR', 'GB', 'GR', 'HU',
+        'HR', 'IE', 'IT', 'LT', 'LU', 'LV', 'MT', 'NL', 'PL', 'PT', 'RO', 'SE', 'SI', 'SK'
+    );
 
     protected function configure()
     {
@@ -58,7 +62,15 @@ class IntegrateCommand extends Command
         /* Choose Moneybird contact to invoice to */
         $moneybirdContact = $this->getMoneybirdContact();
 
-        $this->createInvoice($moneybirdContact, $chosenTimeEntries, $dateTo, $dateFrom);
+        /* Find existing concepts for this contact */
+        $conceptInvoiceId = $this->getConceptInvoice($moneybirdContact);
+
+        if($conceptInvoiceId) {
+            $this->addToExistingInvoice($moneybirdContact, $conceptInvoiceId, $chosenTimeEntries, $dateTo, $dateFrom);
+        } else {
+            $this->createInvoice($moneybirdContact, $chosenTimeEntries, $dateTo, $dateFrom);
+        }
+
     }
 
     private function createInvoice($moneybirdContact, $chosenTimeEntries, $dateTo, $dateFrom)
@@ -73,14 +85,77 @@ class IntegrateCommand extends Command
             list($description,$amount) = explode(' - duration: ', $timeEntry);
             $invoiceLine->description = $description;
             $invoiceLine->amount = $amount;
-            $invoiceLine->price = 85;
+            $invoiceLine->price = $this->_config['hourly_rate'];
+            $invoiceLine->period = date('Ymd', strtotime($dateFrom)) . '..' . date('Ymd', strtotime($dateTo));
+
+            if($taxRateId = $this->fetchTaxRateId($moneybirdContact['object'])) {
+                $invoiceLine->tax_rate_id = $taxRateId;
+            }
+
             $moneybirdInvoiceLines[] = $invoiceLine;
         }
 
+        $invoice->period = date('Ymd', strtotime($dateFrom)) . '..' . date('Ymd', strtotime($dateTo));
         $invoice->details = $moneybirdInvoiceLines;
 
         try {
             $invoice->save();
+            $url = $invoice->url;
+            $urlParts = explode('/', $url);
+            $urlParts = array_slice($urlParts,0,-2);
+            $url = implode('/', $urlParts) . '/' . $invoice->id;
+            $this->_output->writeln('<info>Invoice succesfully saved: ' . $url . '</info>');
+        } catch (Exception $e) {
+            die('Could not set invoice: ' . $e->getMessage());
+        }
+
+        return $invoice->id;
+    }
+
+    private function addToExistingInvoice($moneybirdContact, $conceptInvoiceId, $chosenTimeEntries, $dateTo, $dateFrom)
+    {
+        $conceptInvoice = $this->_moneybird->salesInvoice()->find($conceptInvoiceId);
+
+        // It is not possible to add items to an existing invoice so we'll create a new invoice and delete the old one
+        $moneybirdInvoiceLines = array();
+
+        // Add new lines
+        foreach($chosenTimeEntries as $timeEntry) {
+            $invoiceLine = $this->_moneybird->salesInvoiceDetail();
+            list($description,$amount) = explode(' - duration: ', $timeEntry);
+            $invoiceLine->description = $description;
+            $invoiceLine->amount = $amount;
+            $invoiceLine->price = $this->_config['hourly_rate'];
+            $invoiceLine->period = date('Ymd', strtotime($dateFrom)) . '..' . date('Ymd', strtotime($dateTo));
+
+            if($taxRateId = $this->fetchTaxRateId($moneybirdContact['object'])) {
+                $invoiceLine->tax_rate_id = $taxRateId;
+            }
+
+            $moneybirdInvoiceLines[] = $invoiceLine;
+        }
+
+        // Add existing lines
+        foreach($conceptInvoice->details as $detail) {
+            $moneybirdInvoiceLines[] = $detail;
+        }
+
+        if(isset($conceptInvoice->period) && strlen($conceptInvoice->period) > 0) {
+            // If a period is already set on the existing invoice, update the 'to' field
+            list($from,) = explode('..', $conceptInvoice->period);
+            $period = $from . '..' . date('Ymd', strtotime($dateTo));
+        } else {
+            $period = date('Ymd', strtotime($dateFrom)) . '..' . date('Ymd', strtotime($dateTo));
+        }
+
+        $invoice = $this->_moneybird->salesInvoice();
+        $invoice->{'contact_id'} = $moneybirdContact['id'];
+        $invoice->period = $period;
+        $invoice->details = $moneybirdInvoiceLines;
+
+        try {
+            $invoice->save();
+            $conceptInvoice->delete();
             $url = $invoice->url;
             $urlParts = explode('/', $url);
             $urlParts = array_slice($urlParts,0,-2);
@@ -91,6 +166,58 @@ class IntegrateCommand extends Command
         }
 
         return $invoice->id;
+    }
+
+    private function fetchTaxRateId($moneybirdContactObject)
+    {
+        if($moneybirdContactObject->country != 'NL') {
+            if (
+                in_array($moneybirdContactObject->country, self::EU_COUNTRIES)
+                && isset($this->_config['moneybird_vat_inside_eu'])
+            ) {
+                return $this->_config['moneybird_vat_inside_eu'];
+            } elseif (
+                !in_array($moneybirdContactObject->country, self::EU_COUNTRIES)
+                && isset($this->_config['moneybird_vat_outside_eu'])
+            ) {
+                return $this->_config['moneybird_vat_outside_eu'];
+            }
+        }
+
+        return false;
+    }
+
+    private function getConceptInvoice($moneybirdContact)
+    {
+        $conceptInvoicesResults = $this->_moneybird->salesInvoice()->filter(array('state' => 'draft', 'contact_id' => $moneybirdContact['id']));
+        if(count($conceptInvoicesResults) > 0) {
+            $conceptInvoices[0] = 'No';
+            foreach($conceptInvoicesResults as $conceptInvoicesResult) {
+                $conceptInvoices[$conceptInvoicesResult->id] = 'Concept invoice with total of ' . $conceptInvoicesResult->total_price_incl_tax . ' (http://moneybird.com/' . $this->_config['moneybird_administration_id'] . '/sales_invoices/' . $conceptInvoicesResult->id . ')';
+            }
+
+            $question = new ChoiceQuestion(
+                '<question>Do you want to add the entries to an existing concept invoice for this contact?</question> [No]',
+                array_values($conceptInvoices),
+                0,
+                'No'
+            );
+            $question->setErrorMessage('Input is invalid.');
+
+            $conceptInvoice = $this->_questionHelper->ask($this->_input, $this->_output, $question);
+            if($conceptInvoice != 'No') {
+                foreach ($conceptInvoicesResults as $conceptInvoicesResult) {
+                    $title = 'Concept invoice with total of ' . $conceptInvoicesResult->total_price_incl_tax . ' (http://moneybird.com/' . $this->_config['moneybird_administration_id'] . '/sales_invoices/' . $conceptInvoicesResult->id . ')';
+                    if($title == $conceptInvoice) {
+                        $this->_output->writeln('The time entries are added to the existing concept invoice.');
+                        $conceptInvoiceId = $conceptInvoicesResult->id;
+                        return $conceptInvoiceId;
+                    }
+                }
+            }
+        }
+
+        return false;
     }
 
     private function getTogglWorkspace() {
@@ -107,18 +234,19 @@ class IntegrateCommand extends Command
             }
 
             $question = new ChoiceQuestion(
-                'Choose which Toggl workspace you want to use.',
+                '<question>Choose which Toggl workspace you want to use.</question>',
                 array_values($workspaces),
                 0
             );
             $question->setErrorMessage('Workspace is invalid.');
 
             $workspace = $this->_questionHelper->ask($this->_input, $this->_output, $question);
-            $this->_output->writeln('You have just selected workspace: ' . $workspace);
+            $this->_output->writeln('<comment>You have just selected workspace: ' . $workspace . '</comment>');
 
             foreach ($workspacesResults as $workspaceResult) {
                 if($workspaceResult['name'] == $workspace) {
                     $workspaceId = $workspaceResult['id'];
+                    break;
                 }
             }
         }
@@ -142,7 +270,7 @@ class IntegrateCommand extends Command
         }
 
         $question = new ChoiceQuestion(
-            'Choose which project you want to find entries for.',
+            '<question>Choose which project you want to find entries for.</question>',
             array_values($projects),
             0
         );
@@ -150,7 +278,7 @@ class IntegrateCommand extends Command
         $question->setErrorMessage('Project is invalid.');
 
         $project = $this->_questionHelper->ask($this->_input, $this->_output, $question);
-        $this->_output->writeln('You have just selected project: ' . $project);
+        $this->_output->writeln('<comment>You have just selected project: ' . $project . '</comment>');
 
         $projectId = false;
         foreach($projectsResults as $projectResult) {
@@ -164,7 +292,7 @@ class IntegrateCommand extends Command
 
     private function getTogglDateRange() {
         $dateFromDefault = date(self::TIMESTAMP_FORMAT, strtotime('-1 month'));
-        $question = new Question('From which date do you want to find entries? [' . $dateFromDefault . '] ', $dateFromDefault);
+        $question = new Question('<question>From which date do you want to find entries?</question> [' . $dateFromDefault . '] ', $dateFromDefault);
         $question->setValidator(function ($answer) {
             if (date(self::TIMESTAMP_FORMAT, strtotime($answer)) != $answer) {
                 throw new \RuntimeException(
@@ -177,7 +305,7 @@ class IntegrateCommand extends Command
         $dateFrom = $this->_questionHelper->ask($this->_input, $this->_output, $question);
 
         $dateToDefault = date(self::TIMESTAMP_FORMAT);
-        $question = new Question('Until which date do you want to find entries? [' . $dateToDefault . '] ', $dateToDefault);
+        $question = new Question('<question>Until which date do you want to find entries?</question> [' . $dateToDefault . '] ', $dateToDefault);
         $question->setValidator(function ($answer) {
             if (date(self::TIMESTAMP_FORMAT, strtotime($answer)) != $answer) {
                 throw new \RuntimeException(
@@ -189,7 +317,7 @@ class IntegrateCommand extends Command
         });
         $dateTo = $this->_questionHelper->ask($this->_input, $this->_output, $question);
 
-        $this->_output->writeln('Looking for entries from ' . $dateFrom . ' to ' . $dateTo);
+        $this->_output->writeln('<comment>Looking for entries from ' . $dateFrom . ' to ' . $dateTo . '</comment>');
 
         $dateTo = date('c', strtotime($dateTo . ' 23:59'));
         $dateFrom = date('c', strtotime($dateFrom));
@@ -214,7 +342,7 @@ class IntegrateCommand extends Command
         }
 
         $question = new ChoiceQuestion(
-            'Choose which time entries you want to invoice.',
+            '<question>Choose which time entries you want to invoice.</question>',
             array_values($timeEntries),
             0
         );
@@ -235,6 +363,7 @@ class IntegrateCommand extends Command
 
     private function getMoneybirdContact()
     {
+        $contactObjects = array();
         $contactIds = $this->_moneybird->contact()->listVersions();
         $chunks = array_chunk($contactIds,100,true);
         foreach($chunks as $chunk) {
@@ -257,12 +386,13 @@ class IntegrateCommand extends Command
                 } else {
                     $name = $contactApiResult->firstname . ' ' . $contactApiResult->lastname;
                 }
+                $contactObjects[$contactApiResult->id] = $contactApiResult;
                 $contactsResults[$contactApiResult->id] = $name;
             }
         }
 
         $question = new ChoiceQuestion(
-            'Choose which contact you want to create the invoice for.',
+            '<question>Choose which contact you want to create the invoice for.</question>',
             array_unique(array_values($contactsResults)),
             0
         );
@@ -270,7 +400,7 @@ class IntegrateCommand extends Command
         $question->setAutocompleterValues($contactsResults);
 
         $contact = $this->_questionHelper->ask($this->_input, $this->_output, $question);
-        $this->_output->writeln('You have just selected contact: ' . $contact);
+        $this->_output->writeln('<comment>You have just selected contact: ' . $contact . '</comment>');
 
         $contactId = false;
         foreach($contactsResults as $contactId=>$contactName) {
@@ -279,7 +409,7 @@ class IntegrateCommand extends Command
             }
         }
 
-        return array('name' => $contactName, 'id' => $contactId);
+        return array('name' => $contactName, 'id' => $contactId, 'object' => $contactObjects[$contactId]);
     }
 
     private function getConfigValues()
