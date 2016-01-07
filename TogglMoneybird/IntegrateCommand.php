@@ -36,6 +36,7 @@ class IntegrateCommand extends Command
     {
         $this->_config = $this->getConfigValues();
         $this->_toggl = $this->getTogglApi();
+        $this->_moneybird = $this->getMoneybirdApi();
 
         $this->_input = $input;
         $this->_output = $output;
@@ -56,8 +57,9 @@ class IntegrateCommand extends Command
         print_r($chosenTimeEntries);
 
         /* Choose Moneybird contact to invoice to */
+        $moneybirdContact = $this->getMoneybirdContact();
 
-
+        var_dump($moneybirdContact);
     }
 
     private function getTogglWorkspace() {
@@ -199,6 +201,11 @@ class IntegrateCommand extends Command
         return $chosenTimeEntries;
     }
 
+    private function getMoneybirdContact()
+    {
+        
+    }
+
     private function getConfigValues()
     {
         if (file_exists('config.yml')) {
@@ -221,21 +228,19 @@ class IntegrateCommand extends Command
 
     private function getMoneybirdApi()
     {
-        $provider = new \League\OAuth2\Client\Provider\GenericProvider([
-            'clientId' => $this->_config['moneybird_clientid'],
-            'clientSecret' => $this->_config['moneybird_clientsecret'],
-            'redirectUri' => 'http://togglmoneybird.dev/redirect',
-            'urlAuthorize' => 'http://togglmoneybird.dev/authorize',
-            'urlAccessToken' => 'http://togglmoneybird.dev/token',
-            'urlResourceOwnerDetails' => 'http://togglmoneybird.dev/resource'
-        ]);
+        $connection = new \Picqer\Financials\Moneybird\Connection();
+        $connection->setAccessToken($this->_config['moneybird_access_token']);
+        $connection->setAdministrationId($this->_config['moneybird_administration_id']);
+        $connection->setAuthorizationCode('not_required');
 
         try {
-            // Try to get an access token using the client credentials grant.
-            $accessToken = $provider->getAccessToken('client_credentials');
-        } catch (\League\OAuth2\Client\Provider\Exception\IdentityProviderException $e) {
-            // Failed to get the access token
-            die($e->getMessage());
+            $connection->connect();
+        } catch (Exception $e) {
+            die('Could not initialize Moneybird connection: ' . $e->getMessage());
         }
+
+        $this->apiConnection = $connection;
+
+        return new \Picqer\Financials\Moneybird\Moneybird($this->apiConnection);
     }
 }
