@@ -317,13 +317,8 @@ class IntegrateCommand extends Command
 
         $project = $this->_questionHelper->ask($this->_input, $this->_output, $question);
         $this->_output->writeln('<comment>You have just selected project: ' . $project . '</comment>');
-
-        $projectId = false;
-        foreach($projectsResults as $projectResult) {
-            if($projectResult['name'] == $project) {
-                $projectId = $projectResult['id'];
-            }
-        }
+        
+        $projectId = array_search($project, $projects);
 
         return array($project,$projectId);
     }
