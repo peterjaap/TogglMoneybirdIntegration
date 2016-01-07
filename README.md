@@ -1,6 +1,12 @@
 # Toggl Moneybird Integration
 This integration aims to export Toggl entries and create a Moneybird invoice based on those entries.
 
+## Screenshots
+<img width="1061" alt="screenshot 2016-01-07 21 14 02" src="https://cloud.githubusercontent.com/assets/431360/12181643/cedff39c-b583-11e5-862b-171614ec02f0.png">
+<img width="1061" alt="screenshot 2016-01-07 21 14 24" src="https://cloud.githubusercontent.com/assets/431360/12181642/cec3e968-b583-11e5-8991-72ce36ef7232.png">
+<img width="1061" alt="screenshot 2016-01-07 21 14 43" src="https://cloud.githubusercontent.com/assets/431360/12181641/ceb8b214-b583-11e5-8a26-c07100b4d340.png">
+![screenshot 2016-01-07 21 14 59](https://cloud.githubusercontent.com/assets/431360/12181640/ce7ad4b2-b583-11e5-8de0-7feffe8313cf.png)
+
 ## Installation
 ```
 $ git clone https://github.com/peterjaap/TogglMoneybirdIntegration
