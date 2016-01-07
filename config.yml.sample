@@ -1,1 +1,7 @@
-{ toggl_token: '', moneybird_access_token: '', moneybird_administration_id: '', moneybird_vat_outside_eu: '', moneybird_vat_inside_eu: '', hourly_rate: '', 'round_to': '30' }
+toggl_token:
+moneybird_administration_id:
+moneybird_vat_outside_eu:
+moneybird_access_token:
+moneybird_vat_inside_eu:
+hourly_rate:
+round_to: 30
