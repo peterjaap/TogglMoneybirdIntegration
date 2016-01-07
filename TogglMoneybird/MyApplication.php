@@ -2,10 +2,6 @@
 
 namespace TogglMoneybird;
 
-use AJT\Toggl\TogglClient;
-use Symfony\Component\Yaml\Parser;
-use Symfony\Component\Yaml\Dumper;
-use Symfony\Component\Yaml\Exception\ParseException;
 use Symfony\Component\Console;
 use Symfony\Component\Console\Application;
 use Symfony\Component\Console\Input\InputInterface;
