@@ -56,7 +56,7 @@ class IntegrateCommand extends Command
         print_r($chosenTimeEntries);
 
         /* Choose Moneybird contact to invoice to */
-        
+
 
     }
 

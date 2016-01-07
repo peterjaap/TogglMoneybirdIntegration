@@ -1,1 +1,1 @@
-{ toggl_token: '', moneybird_clientid: '', moneybird_clientsecret: '' }
+{ toggl_token: '', moneybird_oauth_token: '' }
