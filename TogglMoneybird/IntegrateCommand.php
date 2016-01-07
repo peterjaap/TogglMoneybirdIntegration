@@ -15,6 +15,7 @@ use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Question\Question;
 use Symfony\Component\Console\Question\ConfirmationQuestion;
+use Symfony\Component\Console\Question\ChoiceQuestion;
 
 class IntegrateCommand extends Command
 {
@@ -34,7 +35,20 @@ class IntegrateCommand extends Command
         $this->_config = $this->getConfigValues();
         $this->_toggl = $this->getTogglApi();
 
-        echo 'Yay!';
+        $projects = $this->_toggl->getProjects(array());
+
+        print_r($projects);exit;
+
+        $helper = $this->getHelper('question');
+        $question = new ChoiceQuestion(
+            'Choose which project you want to find entries for.',
+            array('Project 1', 'Project 2', 'Project 3'),
+            0
+        );
+        $question->setErrorMessage('Project is invalid.');
+
+        $project = $helper->ask($input, $output, $question);
+        $output->writeln('You have just selected: '.$project);
     }
 
     private function getConfigValues()
