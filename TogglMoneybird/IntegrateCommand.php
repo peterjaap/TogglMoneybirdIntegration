@@ -58,22 +58,28 @@ class IntegrateCommand extends Command
 
         /* Choose which time entries to add to the invoice */
         $chosenTimeEntries = $this->getTogglTimeEntries($dateTo,$dateFrom,$projectId);
+        $this->tagTogglTimeEntries($chosenTimeEntries, 'billed');exit;
 
         /* Choose Moneybird contact to invoice to */
         $moneybirdContact = $this->getMoneybirdContact();
 
         /* Find existing concepts for this contact */
-        $conceptInvoiceId = $this->getConceptInvoice($moneybirdContact);
+        $conceptInvoiceId = $this->getMoneybirdConceptInvoice($moneybirdContact);
 
+        /* If there is a concept invoice chosen, add the lines to that invoice. Otherwise, create new invoice */
         if($conceptInvoiceId) {
-            $this->addToExistingInvoice($moneybirdContact, $conceptInvoiceId, $chosenTimeEntries, $dateTo, $dateFrom);
+            $invoiceId = $this->addToExistingMoneybirdInvoice($moneybirdContact, $conceptInvoiceId, $chosenTimeEntries, $dateTo, $dateFrom);
         } else {
-            $this->createInvoice($moneybirdContact, $chosenTimeEntries, $dateTo, $dateFrom);
+            $invoiceId = $this->createMoneybirdInvoice($moneybirdContact, $chosenTimeEntries, $dateTo, $dateFrom);
         }
 
+        /* If the lines have succesfully been added, tag the chosen time entries as billed */
+        if($invoiceId) {
+            $this->tagTogglTimeEntries($chosenTimeEntries, 'billed');
+        }
     }
 
-    private function createInvoice($moneybirdContact, $chosenTimeEntries, $dateTo, $dateFrom)
+    private function createMoneybirdInvoice($moneybirdContact, $chosenTimeEntries, $dateTo, $dateFrom)
     {
         $invoice = $this->_moneybird->salesInvoice();
 
@@ -112,7 +118,7 @@ class IntegrateCommand extends Command
         return $invoice->id;
     }
 
-    private function addToExistingInvoice($moneybirdContact, $conceptInvoiceId, $chosenTimeEntries, $dateTo, $dateFrom)
+    private function addToExistingMoneybirdInvoice($moneybirdContact, $conceptInvoiceId, $chosenTimeEntries, $dateTo, $dateFrom)
     {
         $conceptInvoice = $this->_moneybird->salesInvoice()->find($conceptInvoiceId);
 
@@ -168,6 +174,31 @@ class IntegrateCommand extends Command
         return $invoice->id;
     }
 
+    private function tagTogglTimeEntries($timeEntries, $tag)
+    {
+        $timeEntryIds = array_keys($timeEntries);
+        foreach($this->timeEntriesResults as $timeEntry) {
+            if(!in_array($timeEntry['id'], $timeEntryIds)) {
+                continue;
+            }
+            if(!isset($timeEntry['tags']) || !in_array($tag, $timeEntry['tags'])) {
+                if(isset($timeEntry['tags'])) {
+                    $tags = array_merge($timeEntry['tags'], array($tag));
+                } else {
+                    $tags = array($tag);
+                }
+
+                $timeEntry['tags'] = $tags;
+                $timeEntry['created_with'] = 'TogglMoneybirdIntegration';
+
+                $this->_toggl->UpdateTimeEntry(array(
+                    'id' => $timeEntry['id'],
+                    'time_entry' => $timeEntry
+                ));
+            }
+        }
+    }
+
     private function roundTime($input)
     {
         $roundMinutes = $this->_config['round_to'];
@@ -200,7 +231,7 @@ class IntegrateCommand extends Command
         return false;
     }
 
-    private function getConceptInvoice($moneybirdContact)
+    private function getMoneybirdConceptInvoice($moneybirdContact)
     {
         $conceptInvoicesResults = $this->_moneybird->salesInvoice()->filter(array('state' => 'draft', 'contact_id' => $moneybirdContact['id']));
         if(count($conceptInvoicesResults) > 0) {
@@ -278,10 +309,6 @@ class IntegrateCommand extends Command
             $projects[$projectResult['id']] = $projectResult['name'];
         }
 
-        if(self::TEST_MODE) {
-            $projects = array_slice($projects, 0, 10);
-        }
-
         $question = new ChoiceQuestion(
             '<question>Choose which project you want to find entries for.</question>',
             array_values($projects),
@@ -339,19 +366,19 @@ class IntegrateCommand extends Command
     }
 
     private function getTogglTimeEntries($dateTo, $dateFrom, $projectId) {
-        $timeEntriesResults = $this->_toggl->getTimeEntries(array(
+        $this->timeEntriesResults = $this->_toggl->getTimeEntries(array(
             'start_date' => $dateFrom,
             'end_date' => $dateTo,
         ));
 
         $timeEntries = array();
-        foreach($timeEntriesResults as $timeEntriesResult) {
+        foreach($this->timeEntriesResults as $timeEntriesResult) {
             if(!isset($timeEntriesResult['pid']) || $timeEntriesResult['pid'] != $projectId) continue;
-            $timeEntries[$timeEntriesResult['id']] = $timeEntriesResult['description'] . ' - duration: ' . gmdate('H:i:s', $timeEntriesResult['duration']);
-        }
-
-        if(self::TEST_MODE) {
-            $timeEntries = array_slice($timeEntries, 0, 20);
+            $title = $timeEntriesResult['description'] . ' - duration: ' . gmdate('H:i:s', $timeEntriesResult['duration']);
+            if(isset($timeEntriesResult['tags']) && count($timeEntriesResult['tags'])>0) {
+                $title .= ' <info>' . implode(', ', $timeEntriesResult['tags']) . '</info>';
+            }
+            $timeEntries[$timeEntriesResult['id']] = $title;
         }
 
         $question = new ChoiceQuestion(
@@ -367,7 +394,10 @@ class IntegrateCommand extends Command
 
         foreach($chosenTimeEntries as $chosenTimeEntry) {
             if(stripos($chosenTimeEntry, 'fix')!==false || stripos($chosenTimeEntry, 'bug')!==false) {
-                $this->_output->writeln('Caution; you are about to invoice a time entry that indicates it is a bug fix: ' . $chosenTimeEntry);
+                $this->_output->writeln('<error>Caution; you are about to invoice a time entry that indicates it is a bug fix: ' . $chosenTimeEntry . '</error>');
+            }
+            if(stripos($chosenTimeEntry, 'billed')!==false) {
+                $this->_output->writeln('<error>Caution; you are about to invoice a time entry with a \'billed\' tag: ' . $chosenTimeEntry . '</error>');
             }
         }
 
