@@ -20,7 +20,8 @@ use Symfony\Component\Console\Question\ChoiceQuestion;
 class IntegrateCommand extends Command
 {
     const CONFIG_FILE = 'config.yml';
-    const DEBUG_MODE = true;
+    const DEBUG_MODE = false;
+    const TIMESTAMP_FORMAT = 'd-m-Y';
 
     protected function configure()
     {
@@ -35,20 +36,86 @@ class IntegrateCommand extends Command
         $this->_config = $this->getConfigValues();
         $this->_toggl = $this->getTogglApi();
 
-        $projects = $this->_toggl->getProjects(array());
+        $questionHelper = $this->getHelper('question');
 
-        print_r($projects);exit;
+        $workspacesResults = $this->_toggl->getWorkspaces(array());
 
-        $helper = $this->getHelper('question');
+        $workspaceId = false;
+        if(count($workspacesResults)==1) {
+            $workspace = array_pop($workspacesResults);
+            $workspaceId = $workspace['id'];
+        } elseif(count($workspacesResults) > 1) {
+            $workspaces = array();
+            foreach ($workspacesResults as $workspaceResult) {
+                $workspaces[$workspaceResult['id']] = $workspaceResult['name'];
+            }
+
+            $question = new ChoiceQuestion(
+                'Choose which Toggl workspace you want to use.',
+                array_values($workspaces),
+                0
+            );
+            $question->setErrorMessage('Workspace is invalid.');
+
+            $workspace = $questionHelper->ask($input, $output, $question);
+            $output->writeln('You have just selected workspace: ' . $workspace);
+
+            foreach ($workspacesResults as $workspaceResult) {
+                if($workspaceResult['name'] == $workspace) {
+                    $workspaceId = $workspaceResult['id'];
+                }
+            }
+        }
+
+        if(!$workspaceId) {
+            die('No workspace(s) found');
+        }
+
+        $projectsResults = $this->_toggl->getProjects(array('id' => $workspaceId));
+        $projects = array();
+        foreach($projectsResults as $projectResult) {
+            $projects[$projectResult['id']] = $projectResult['name'];
+        }
+
+        $projects = array_slice($projects,0,10);
+
         $question = new ChoiceQuestion(
             'Choose which project you want to find entries for.',
-            array('Project 1', 'Project 2', 'Project 3'),
+            array_values($projects),
             0
         );
         $question->setErrorMessage('Project is invalid.');
 
-        $project = $helper->ask($input, $output, $question);
-        $output->writeln('You have just selected: '.$project);
+        $project = $questionHelper->ask($input, $output, $question);
+        $output->writeln('You have just selected project: ' . $project);
+
+        $dateFromDefault = date(self::TIMESTAMP_FORMAT, strtotime('-1 month'));
+        $question = new Question('From which date do you want to find entries? [' . $dateFromDefault . '] ', $dateFromDefault);
+        $question->setValidator(function ($answer) {
+            if (date(self::TIMESTAMP_FORMAT, strtotime($answer)) != $answer) {
+                throw new \RuntimeException(
+                    'Input format should be ' . self::TIMESTAMP_FORMAT
+                );
+            }
+
+            return $answer;
+        });
+        $dateFrom = $questionHelper->ask($input, $output, $question);
+
+        $dateToDefault = date(self::TIMESTAMP_FORMAT);
+        $question = new Question('Until which date do you want to find entries? [' . $dateToDefault . '] ', $dateToDefault);
+        $question->setValidator(function ($answer) {
+            if (date(self::TIMESTAMP_FORMAT, strtotime($answer)) != $answer) {
+                throw new \RuntimeException(
+                    'Input format should be ' . self::TIMESTAMP_FORMAT
+                );
+            }
+
+            return $answer;
+        });
+        $dateTo = $questionHelper->ask($input, $output, $question);
+
+        $output->writeln('Looking for entries from ' . $dateFrom . ' to ' . $dateTo);
     }
 
     private function getConfigValues()
