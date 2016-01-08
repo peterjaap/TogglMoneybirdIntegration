@@ -1,5 +1,5 @@
 # Toggl Moneybird Integration
-This integration aims to export Toggl entries and create a Moneybird invoice based on those entries.
+This integration aims to export Toggl entries and create a Moneybird invoice based on those entries (you'll need PHP 5.6 -> upgrade people!).
 
 ## Screenshots
 These screenshots have dummy data in them, 'Contact / Project XX' would be an actual contact / project name.
