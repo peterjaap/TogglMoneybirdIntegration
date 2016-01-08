@@ -127,8 +127,9 @@ class IntegrateCommand extends Command
         foreach($chosenTimeEntries as $timeEntry) {
             $invoiceLine = $this->_moneybird->salesInvoiceDetail();
             list($description,$amount) = explode(' - duration: ', $timeEntry);
+            list($amount,) = explode(' ', $amount);
             $invoiceLine->description = $description;
-            $invoiceLine->amount = $amount;
+            $invoiceLine->amount = $this->roundTime($amount);
             $invoiceLine->price = $this->_config['hourly_rate'];
             $invoiceLine->period = date('Ymd', strtotime($dateFrom)) . '..' . date('Ymd', strtotime($dateTo));
 
@@ -164,7 +165,7 @@ class IntegrateCommand extends Command
             $urlParts = explode('/', $url);
             $urlParts = array_slice($urlParts,0,-2);
             $url = implode('/', $urlParts) . '/' . $invoice->id;
-            $this->_output->writeln('Invoice succesfully saved: ' . $url);
+            $this->_output->writeln('<info>Invoice succesfully saved: ' . $url . '</info>');
         } catch (Exception $e) {
             die('Could not set invoice: ' . $e->getMessage());
         }
@@ -251,7 +252,7 @@ class IntegrateCommand extends Command
                 foreach ($conceptInvoicesResults as $conceptInvoicesResult) {
                     $title = 'Concept invoice with total of ' . $conceptInvoicesResult->total_price_incl_tax . ' (http://moneybird.com/' . $this->_config['moneybird_administration_id'] . '/sales_invoices/' . $conceptInvoicesResult->id . ')';
                     if($title == $conceptInvoice) {
-                        $this->_output->writeln('The time entries are added to the existing concept invoice.');
+                        $this->_output->writeln('<comment>The time entries are added to the existing concept invoice.</comment>');
                         $conceptInvoiceId = $conceptInvoicesResult->id;
                         return $conceptInvoiceId;
                     }
