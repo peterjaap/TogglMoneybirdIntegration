@@ -12,8 +12,6 @@ These screenshots have dummy data in them, 'Contact / Project XX' would be an ac
 ```
 $ git clone https://github.com/peterjaap/TogglMoneybirdIntegration
 $ cd TogglMoneybirdIntegration
-$ cp config.yml.sample config.yml
-$ vim config.yml (see Configuration for more info)
 $ composer install
 ```
 ## Configuration
@@ -31,7 +29,7 @@ The config.yml file takes a few inputs;
 ```
 $ php application.php
 ```
-The application will ask you a number of inputs, in succession;
+The first time you'll run the application it will ask you a number of inputs and write them to the config.yml file.
 
 1. (optional, only when multiple are found) Choose Toggl workspace
 2. Choose which project you want to find entries for.
