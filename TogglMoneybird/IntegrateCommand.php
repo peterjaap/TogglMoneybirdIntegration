@@ -37,14 +37,13 @@ class IntegrateCommand extends Command
 
     protected function execute(InputInterface $input, OutputInterface $output)
     {
+        $this->_input = $input;
+        $this->_output = $output;
+        $this->_questionHelper = $this->getHelper('question');
+
         $this->_config = $this->getConfigValues();
         $this->_toggl = $this->getTogglApi();
         $this->_moneybird = $this->getMoneybirdApi();
-
-        $this->_input = $input;
-        $this->_output = $output;
-
-        $this->_questionHelper = $this->getHelper('question');
 
         /* Choose Toggl workspace */
         $workspaceId = $this->getTogglWorkspace();
@@ -451,6 +450,29 @@ class IntegrateCommand extends Command
 
     private function getConfigValues()
     {
+        if (!file_exists('config.yml')) {
+            $this->_output->writeln(self::CONFIG_FILE . ' does not exist. We will ask you for some inputs to create the configuration file.');
+
+            $inputs = array(
+                'toggl_token' => 'Toggl API token',
+                'moneybird_administration_id' => 'Moneybird administration ID',
+                'moneybird_access_token' => 'Moneybird access token',
+                'hourly_rate' => 'Your hourly rate',
+                'round_to' => '(optional) Round time entries to X minutes',
+                'moneybird_vat_outside_eu' => '(optional) Moneybird tax rate ID for outside EU',
+                'moneybird_vat_inside_eu' => '(optional) Moneybird tax rate ID for inside EU',
+            );
+
+            foreach($inputs as $field => $hint) {
+                $question = new Question('<question>' . $hint . ':</question> ');
+                $config[$field] = $this->_questionHelper->ask($this->_input, $this->_output, $question);
+            }
+
+            $dumper = new Dumper();
+            $yaml = $dumper->dump($config);
+            file_put_contents(self::CONFIG_FILE, $yaml);
+        }
+
         if (file_exists('config.yml')) {
             try {
                 $yaml = new Parser();
