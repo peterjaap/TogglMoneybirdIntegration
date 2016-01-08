@@ -304,6 +304,7 @@ class IntegrateCommand extends Command
         $projectsResults = $this->_toggl->getProjects(array('id' => $workspaceId));
         $projects = array();
         foreach($projectsResults as $projectResult) {
+            if(!isset($projectResult['actual_hours']) || $projectResult['active'] != 1) continue;
             $projects[$projectResult['id']] = $projectResult['name'];
         }
 
@@ -373,6 +374,11 @@ class IntegrateCommand extends Command
                 $title .= ' <info>' . implode(', ', $timeEntriesResult['tags']) . '</info>';
             }
             $timeEntries[$timeEntriesResult['id']] = $title;
+        }
+
+        if(count($timeEntries) == 1) {
+            $this->_output->writeln('<error>No time entries found for this project for this period.</error>');
+            die();
         }
 
         $question = new ChoiceQuestion(
