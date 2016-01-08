@@ -451,7 +451,7 @@ class IntegrateCommand extends Command
     private function getConfigValues()
     {
         if (!file_exists('config.yml')) {
-            $this->_output->writeln(self::CONFIG_FILE . ' does not exist. We will ask you for some inputs to create the configuration file.');
+            $this->_output->writeln('<comment>' . self::CONFIG_FILE . ' does not exist. We will ask you for some inputs to create the configuration file.</comment>');
 
             $inputs = array(
                 'toggl_token' => 'Toggl API token',
