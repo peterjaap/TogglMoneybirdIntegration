@@ -99,7 +99,6 @@ class IntegrateCommand extends Command
             $moneybirdInvoiceLines[] = $invoiceLine;
         }
 
-        $invoice->period = date('Ymd', strtotime($dateFrom)) . '..' . date('Ymd', strtotime($dateTo));
         $invoice->details = $moneybirdInvoiceLines;
 
         try {
@@ -131,7 +130,6 @@ class IntegrateCommand extends Command
             $invoiceLine->description = $description;
             $invoiceLine->amount = $this->roundTime($amount);
             $invoiceLine->price = $this->_config['hourly_rate'];
-            $invoiceLine->period = date('Ymd', strtotime($dateFrom)) . '..' . date('Ymd', strtotime($dateTo));
 
             if($taxRateId = $this->fetchTaxRateId($moneybirdContact['object'])) {
                 $invoiceLine->tax_rate_id = $taxRateId;
@@ -145,17 +143,19 @@ class IntegrateCommand extends Command
             $moneybirdInvoiceLines[] = $detail;
         }
 
-        if(isset($conceptInvoice->period) && strlen($conceptInvoice->period) > 0) {
-            // If a period is already set on the existing invoice, update the 'to' field
-            list($from,) = explode('..', $conceptInvoice->period);
-            $period = $from . '..' . date('Ymd', strtotime($dateTo));
-        } else {
-            $period = date('Ymd', strtotime($dateFrom)) . '..' . date('Ymd', strtotime($dateTo));
+        foreach($moneybirdInvoiceLines as $invoiceLine) {
+            if (isset($invoiceLine->period) && strlen($invoiceLine->period) > 0) {
+                // If a period is already set on the existing invoice, update the 'to' field
+                list($from,) = explode('..', $invoiceLine->period);
+                $period = $from . '..' . date('Ymd', strtotime($dateTo));
+            } else {
+                $period = date('Ymd', strtotime($dateFrom)) . '..' . date('Ymd', strtotime($dateTo));
+            }
+            $invoiceLine->period = date('Ymd', strtotime($dateFrom)) . '..' . date('Ymd', strtotime($dateTo));
         }
 
         $invoice = $this->_moneybird->salesInvoice();
         $invoice->{'contact_id'} = $moneybirdContact['id'];
-        $invoice->period = $period;
         $invoice->details = $moneybirdInvoiceLines;
 
         try {

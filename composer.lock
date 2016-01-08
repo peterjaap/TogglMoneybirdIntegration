@@ -4,8 +4,8 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#composer-lock-the-lock-file",
         "This file is @generated automatically"
     ],
-    "hash": "efa82f862882e3312fdfb90079b697e0",
-    "content-hash": "0f45495af58594d45d61de701ad74b32",
+    "hash": "f13bc0da0ed6958b8bca4839a3b7a4e0",
+    "content-hash": "48f64c8674d363ebe4176caa9d66d43f",
     "packages": [
         {
             "name": "ajt/guzzle-toggl",
@@ -323,16 +323,16 @@
         },
         {
             "name": "picqer/moneybird-php-client",
-            "version": "v0.2.0",
+            "version": "dev-master",
             "source": {
                 "type": "git",
                 "url": "https://github.com/picqer/moneybird-php-client.git",
-                "reference": "f979c8f3c91da2b88efe4818a9d92341e81b8ab7"
+                "reference": "fc1df0f7dabb9804c40bf37f22bc4e8d68bf32b6"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/picqer/moneybird-php-client/zipball/f979c8f3c91da2b88efe4818a9d92341e81b8ab7",
-                "reference": "f979c8f3c91da2b88efe4818a9d92341e81b8ab7",
+                "url": "https://api.github.com/repos/picqer/moneybird-php-client/zipball/fc1df0f7dabb9804c40bf37f22bc4e8d68bf32b6",
+                "reference": "fc1df0f7dabb9804c40bf37f22bc4e8d68bf32b6",
                 "shasum": ""
             },
             "require": {
@@ -365,7 +365,7 @@
                 "moneybird",
                 "php"
             ],
-            "time": "2015-12-22 08:51:56"
+            "time": "2015-12-22 15:38:55"
         },
         {
             "name": "psr/http-message",
@@ -648,7 +648,9 @@
     "packages-dev": [],
     "aliases": [],
     "minimum-stability": "stable",
-    "stability-flags": [],
+    "stability-flags": {
+        "picqer/moneybird-php-client": 20
+    },
     "prefer-stable": false,
     "prefer-lowest": false,
     "platform": [],

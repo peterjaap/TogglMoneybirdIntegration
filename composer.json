@@ -1,6 +1,6 @@
 {
     "require": {
-        "picqer/moneybird-php-client": "^0.2.0",
+        "picqer/moneybird-php-client": "dev-master",
         "symfony/console": "^3.0",
         "ajt/guzzle-toggl": "^0.10.0",
         "symfony/yaml": "^3.0"
