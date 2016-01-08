@@ -364,7 +364,8 @@ class IntegrateCommand extends Command
             'end_date' => $dateTo,
         ));
 
-        $timeEntries = array();
+        $allText = 'All below';
+        $timeEntries = array($allText);
         foreach($this->timeEntriesResults as $timeEntriesResult) {
             if(!isset($timeEntriesResult['pid']) || $timeEntriesResult['pid'] != $projectId) continue;
             $title = $timeEntriesResult['description'] . ' - duration: ' . gmdate('H:i:s', $timeEntriesResult['duration']);
@@ -384,6 +385,10 @@ class IntegrateCommand extends Command
 
         $timeEntryValues = $this->_questionHelper->ask($this->_input, $this->_output, $question);
         $chosenTimeEntries = array_intersect($timeEntries, $timeEntryValues);
+        if(isset($chosenTimeEntries[0]) && $chosenTimeEntries[0] == $allText) {
+            $chosenTimeEntries = $timeEntries;
+            unset($chosenTimeEntries[0]);
+        }
 
         foreach($chosenTimeEntries as $chosenTimeEntry) {
             if(stripos($chosenTimeEntry, 'fix')!==false || stripos($chosenTimeEntry, 'bug')!==false) {
