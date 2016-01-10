@@ -14,12 +14,16 @@ $ git clone https://github.com/peterjaap/TogglMoneybirdIntegration
 $ cd TogglMoneybirdIntegration
 $ composer install
 ```
+If you have whiptail installed on your system, it will use whiptail to create a dialog where you can select multiple time entries for invoicing. This works easier than the default (Symfony) dialog box. You can install whiptail (which is part of newt) under Mac OS through Homebrew;
+```
+$ brew install newt
+```
 ## Configuration
-The config.yml file takes a few inputs;
+The config.yml file takes a few inputs. The first time you'll run the application it will ask you a number of inputs and write them to the config.yml file.
 
 - **toggl_token** (required) - this can be found in your profile on Toggl.com
-- **moneybird_administration_id** (required)  - this is the first number in your Moneybird URL when you are logged in to your administration
 - **moneybird_access_token** (required)  - this can be generated at https://moneybird.com/user/applications/new (choose the API token for Personal Use and select your administration)
+- **moneybird_administration_id** (required, autofilled if there is only one administration)  - this is the first number in your Moneybird URL when you are logged in to your administration
 - **hourly_rate** (required) - your hourly rate, to calculate the prices
 - **round_to** (optional) - round your time entries to the nearest X minutes (leave empty or set to 0 to disable rounding)
 - **moneybird_vat_outside_eu** (optional) - if this is set, this tax rate ID is used for invoices that are sent outside the EU
@@ -29,7 +33,7 @@ The config.yml file takes a few inputs;
 ```
 $ php application.php
 ```
-The first time you'll run the application it will ask you a number of inputs and write them to the config.yml file.
+The application will run you through a number of steps to create your invoice;
 
 1. (optional, only when multiple are found) Choose Toggl workspace
 2. Choose which project you want to find entries for.

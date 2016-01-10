@@ -381,19 +381,71 @@ class IntegrateCommand extends Command
             die();
         }
 
-        $question = new ChoiceQuestion(
-            '<question>Choose which time entries you want to invoice (comma separated numerical input).</question>',
-            array_values($timeEntries),
-            0
-        );
-        $question->setMultiselect(true);
-        $question->setErrorMessage('Time entry input is invalid.');
+        if(shell_exec('which whiptail')) {
+            $whiptailCommands = file_get_contents('whiptail.sh');
+            $whiptailCommands = explode("\n", $whiptailCommands);
 
-        $timeEntryValues = $this->_questionHelper->ask($this->_input, $this->_output, $question);
-        $chosenTimeEntries = array_intersect($timeEntries, $timeEntryValues);
-        if(isset($chosenTimeEntries[0]) && $chosenTimeEntries[0] == $allText) {
-            $chosenTimeEntries = $timeEntries;
-            unset($chosenTimeEntries[0]);
+            /* Create and format whiptail commands */
+            $timeEntriesWhiptail = array();
+            foreach($timeEntries as $key=>$timeEntry) {
+                $timeEntry = str_replace('<info>', '(', $timeEntry);
+                $timeEntry = str_replace('</info>', ')', $timeEntry);
+                /* Select non-billed items by default */
+                if(stripos($timeEntry, 'billed') !== false) {
+                    $selected = 'OFF';
+                } else {
+                    $selected = 'ON';
+                }
+                $timeEntriesWhiptail[$key] = '"' . $key . '" "' . $timeEntry . '" ' . $selected . ' \\';
+            }
+
+            $whiptailCommands = array_merge(
+                array_slice($whiptailCommands,0,3),
+                array_values($timeEntriesWhiptail),
+                array_slice($whiptailCommands,4)
+            );
+
+            foreach($whiptailCommands as &$command)
+            {
+                $command = str_replace('Choose time entries to invoice', 'Choose time entries to invoice (' . count($timeEntries) . ' entries found)', $command);
+            }
+
+            $whiptail = implode("\n", $whiptailCommands);
+            $result = shell_exec($whiptail);
+            $result = trim($result, '"');
+            $results = explode(' ', $result);
+
+            $results = array_map(function($input) {
+                return trim($input, "\n\"");
+            }, $results);
+
+            if(array_search('0', $results)) {
+                $chosenTimeEntries = $timeEntries;
+                unset($chosenTimeEntries[0]);
+            } else {
+                $chosenTimeEntries = array();
+                foreach($timeEntries as $key=>$timeEntry) {
+                    if(in_array($key, $results)) {
+                        $chosenTimeEntries[$key] = $timeEntry;
+                    }
+                }
+            }
+        } else {
+            $question = new ChoiceQuestion(
+                '<question>Choose which time entries you want to invoice (comma separated numerical input).</question>',
+                array_values($timeEntries),
+                0
+            );
+            $question->setMultiselect(true);
+            $question->setErrorMessage('Time entry input is invalid.');
+
+            $timeEntryValues = $this->_questionHelper->ask($this->_input, $this->_output, $question);
+
+            $chosenTimeEntries = array_intersect($timeEntries, $timeEntryValues);
+            if(isset($chosenTimeEntries[0]) && $chosenTimeEntries[0] == $allText) {
+                $chosenTimeEntries = $timeEntries;
+                unset($chosenTimeEntries[0]);
+            }
         }
 
         foreach($chosenTimeEntries as $chosenTimeEntry) {
