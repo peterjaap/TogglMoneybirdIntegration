@@ -466,17 +466,39 @@ class IntegrateCommand extends Command
 
             $inputs = array(
                 'toggl_token' => 'Toggl API token',
-                'moneybird_administration_id' => 'Moneybird administration ID',
                 'moneybird_access_token' => 'Moneybird access token',
+                'moneybird_administration_id' => 'Moneybird administration',
                 'hourly_rate' => 'Your hourly rate',
                 'round_to' => '(optional) Round time entries to X minutes',
                 'moneybird_vat_outside_eu' => '(optional) Moneybird tax rate ID for outside EU',
                 'moneybird_vat_inside_eu' => '(optional) Moneybird tax rate ID for inside EU',
             );
 
+            $config = array();
             foreach($inputs as $field => $hint) {
                 $question = new Question('<question>' . $hint . ':</question> ');
-                $config[$field] = $this->_questionHelper->ask($this->_input, $this->_output, $question);
+                if(stripos($hint, 'optional')===false) {
+                    $question->setValidator(function ($value) {
+                        if (trim($value) == '') {
+                            throw new \Exception('This field can not be empty');
+                        }
+
+                        return $value;
+                    });
+                }
+                if($field == 'moneybird_administration_id') {
+                    $config[$field] = $this->getMoneybirdAdministrationId($hint, $config['moneybird_access_token']);
+                    if($config[$field] === false) {
+                        $config[$field] = $this->_questionHelper->ask($this->_input, $this->_output, $question);
+                    }
+                } elseif($field == 'moneybird_vat_outside_eu' || $field == 'moneybird_vat_inside_eu') {
+                    $config[$field] = $this->getMoneybirdTaxRates($hint, $field, $config);
+                    if($config[$field] === false) {
+                        $config[$field] = $this->_questionHelper->ask($this->_input, $this->_output, $question);
+                    }
+                } else {
+                    $config[$field] = $this->_questionHelper->ask($this->_input, $this->_output, $question);
+                }
             }
 
             $dumper = new Dumper();
@@ -495,6 +517,87 @@ class IntegrateCommand extends Command
         } else {
             die(self::CONFIG_FILE . ' does not exist. Please copy ' . self::CONFIG_FILE . '.example to ' . self::CONFIG_FILE . ' and fill the fields.');
         }
+    }
+
+    private function getMoneybirdAdministrationId($hint, $moneybirdAccessToken)
+    {
+        $connection = new \Picqer\Financials\Moneybird\Connection();
+        $connection->setAccessToken($moneybirdAccessToken);
+        $connection->setAdministrationId(null);
+        $connection->setAuthorizationCode('not_required');
+
+        try {
+            $connection->connect();
+            $this->_moneybird = new \Picqer\Financials\Moneybird\Moneybird($connection);
+            $administrations = $this->_moneybird->administration()->get();
+        } catch (Exception $e) {
+            $this->_output->writeln('Could not fetch administrations, please insert administration ID manually.');
+            return false;
+        }
+
+        if(count($administrations) == 1) {
+            return $administrations[0]->id;
+        }
+
+        foreach($administrations as $administration) {
+            $administrationValues[$administration->id] = $administration->name;
+        }
+
+        $question = new ChoiceQuestion(
+            '<question>' . $hint . '</question>',
+            array_values($administrationValues),
+            0
+        );
+        $question->setAutocompleterValues(array_values($administrationValues));
+        $question->setErrorMessage('Administration is invalid.');
+
+        $chosenAdministration = $this->_questionHelper->ask($this->_input, $this->_output, $question);
+
+        $administrationId = array_search($chosenAdministration, $administrationValues);
+
+        return $administrationId;
+    }
+
+    private function getMoneybirdTaxRates($hint, $field, $config)
+    {
+        $connection = new \Picqer\Financials\Moneybird\Connection();
+        $connection->setAccessToken($config['moneybird_access_token']);
+        $connection->setAdministrationId($config['moneybird_administration_id']);
+        $connection->setAuthorizationCode('not_required');
+
+        try {
+            $connection->connect();
+            $this->_moneybird = new \Picqer\Financials\Moneybird\Moneybird($connection);
+            $taxRates = $this->_moneybird->taxRate()->get();
+        } catch (Exception $e) {
+            $this->_output->writeln('Could not fetch administrations, please insert administration ID manually.');
+            return false;
+        }
+
+        $taxRatesValues = array('Default tax rate');
+        foreach($taxRates as $taxRate) {
+            if($taxRate->tax_rate_type == 'sales_invoice' && $taxRate->active) {
+                $taxRatesValues[$taxRate->id] = $taxRate->name . ' (' . $taxRate->percentage . ' %)';
+            }
+        }
+
+        $question = new ChoiceQuestion(
+            '<question>' . $hint . '</question>',
+            array_values($taxRatesValues),
+            0
+        );
+        $question->setAutocompleterValues(array_values($taxRatesValues));
+        $question->setErrorMessage('Administration is invalid.');
+
+        $chosenTaxRate = $this->_questionHelper->ask($this->_input, $this->_output, $question);
+
+        $taxRateId = array_search($chosenTaxRate, $taxRatesValues);
+
+        if($taxRateId == 0) {
+            return null;
+        }
+
+        return $taxRateId;
     }
 
     private function getTogglApi()
