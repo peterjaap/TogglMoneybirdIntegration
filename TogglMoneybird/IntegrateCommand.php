@@ -391,7 +391,7 @@ class IntegrateCommand extends Command
                 $timeEntry = str_replace('<info>', '(', $timeEntry);
                 $timeEntry = str_replace('</info>', ')', $timeEntry);
                 /* Select non-billed items by default */
-                if(stripos($timeEntry, 'billed') !== false || stripos($timeEntry, 'All below') !== false) {
+                if(stripos($timeEntry, 'billed') !== false || stripos($timeEntry, $allText) !== false) {
                     $selected = 'OFF';
                 } else {
                     $selected = 'ON';
@@ -419,7 +419,7 @@ class IntegrateCommand extends Command
                 return trim($input, "\n\"");
             }, $results);
 
-            if(array_search('0', $results)) {
+            if(array_search('0', $results) === 0) {
                 $chosenTimeEntries = $timeEntries;
                 unset($chosenTimeEntries[0]);
             } else {
