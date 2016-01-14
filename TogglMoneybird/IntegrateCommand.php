@@ -3,6 +3,7 @@
 namespace TogglMoneybird;
 
 use AJT\Toggl\TogglClient;
+use Symfony\Component\Yaml\Exception\DumpException;
 use Symfony\Component\Yaml\Parser;
 use Symfony\Component\Yaml\Dumper;
 use Symfony\Component\Yaml\Exception\ParseException;
@@ -20,6 +21,7 @@ use Symfony\Component\Console\Question\ChoiceQuestion;
 class IntegrateCommand extends Command
 {
     const CONFIG_FILE = 'config.yml';
+    const CONNECT_FILE = 'connections.yml';
     const DEBUG_MODE = false;
     const TIMESTAMP_FORMAT = 'd-m-Y';
     const EU_COUNTRIES = array(
@@ -58,7 +60,10 @@ class IntegrateCommand extends Command
         $chosenTimeEntries = $this->getTogglTimeEntries($dateTo,$dateFrom,$projectId);
 
         /* Choose Moneybird contact to invoice to */
-        $moneybirdContact = $this->getMoneybirdContact();
+        $moneybirdContact = $this->getMoneybirdContact($projectId);
+
+        /* Ask to connect this Moneybird contact to the chosen Toggl project */
+        $this->connectMoneybirdContactToTogglProject($moneybirdContact, $projectId);
 
         /* Find existing concepts for this contact */
         $conceptInvoiceId = $this->getMoneybirdConceptInvoice($moneybirdContact);
@@ -170,6 +175,97 @@ class IntegrateCommand extends Command
         }
 
         return $invoice->id;
+    }
+
+    private function getMoneybirdContactIdByTogglProject($togglProjectId)
+    {
+        if(file_exists(self::CONNECT_FILE)) {
+            try {
+                $yaml = new Parser();
+                $connections = $yaml->parse(file_get_contents(self::CONNECT_FILE));
+                $connections = array_flip($connections);
+                if(isset($connections[$togglProjectId]) && $connections[$togglProjectId]) {
+                    return $connections[$togglProjectId];
+                }
+            } catch (ParseException $e) {
+                printf("Unable to parse the YAML string: %s", $e->getMessage());
+            }
+        } else {
+            return false;
+        }
+    }
+
+    private function getTogglProjectIdByMoneybirdContact($moneybirdContact)
+    {
+        if(file_exists(self::CONNECT_FILE)) {
+            try {
+                $yaml = new Parser();
+                $connections = $yaml->parse(file_get_contents(self::CONNECT_FILE));
+                if(isset($connections[$moneybirdContact['id']]) && $connections[$moneybirdContact['id']]) {
+                    return $connections[$moneybirdContact['id']];
+                }
+            } catch (ParseException $e) {
+                printf("Unable to parse the YAML string: %s", $e->getMessage());
+            }
+        } else {
+            return false;
+        }
+    }
+
+    private function connectMoneybirdContactToTogglProject($moneybirdContact, $togglProjectId)
+    {
+        if($this->getMoneybirdContactIdByTogglProject($togglProjectId)) {
+            return;
+        }
+
+        if($this->getTogglProjectIdByMoneybirdContact($moneybirdContact) == 'DONT_ASK_TO_CONNECT') {
+            return;
+        }
+
+        $answers = array('Yes', 'No, not now', 'No, never');
+        $question = new ChoiceQuestion(
+            '<question>Do you want to connect the chosen Moneybird contact to the chosen Toggl project to skip this step in the future?</question>',
+            $answers,
+            0
+        );
+        $question->setAutocompleterValues(array_values($answers));
+        $question->setErrorMessage('Answer is invalid.');
+
+        $answer = $this->_questionHelper->ask($this->_input, $this->_output, $question);
+        $answerId = array_search($answer, $answers);
+
+        if($answerId === 1) {
+            return;
+        }
+
+        if($answerId === 2) {
+            $togglProjectId = 'DONT_ASK_TO_CONNECT';
+        }
+
+        if(file_exists(self::CONNECT_FILE)) {
+            try {
+                $yaml = new Parser();
+                $connections = $yaml->parse(file_get_contents(self::CONNECT_FILE));
+            } catch (ParseException $e) {
+                printf("Unable to parse the YAML string: %s", $e->getMessage());
+            }
+        } else {
+            $connections = array();
+        }
+
+        if(is_numeric($moneybirdContact)) {
+            $connections[$moneybirdContact] = $togglProjectId;
+        } elseif(is_array($moneybirdContact)) {
+            $connections[$moneybirdContact['id']] = $togglProjectId;
+        }
+
+        try {
+            $dumper = new Dumper();
+            $yaml = $dumper->dump($connections);
+            file_put_contents(self::CONNECT_FILE, $yaml);
+        } catch(DumpException $e) {
+            printf("Could not dump the YAML string: %s", $e->getMessage());
+        }
     }
 
     private function tagTogglTimeEntries($timeEntries, $tag)
@@ -460,9 +556,9 @@ class IntegrateCommand extends Command
         return $chosenTimeEntries;
     }
 
-    private function getMoneybirdContact()
+    private function getMoneybirdContact($projectId = null)
     {
-        $contactObjects = array();
+        $contactsResults = $contactObjects = array();
         $contactIds = $this->_moneybird->contact()->listVersions();
         $chunks = array_chunk($contactIds,100,true);
         foreach($chunks as $chunk) {
@@ -490,6 +586,17 @@ class IntegrateCommand extends Command
             }
         }
 
+        if($projectId !== null) {
+            $moneybirdContactId = $this->getMoneybirdContactIdByTogglProject($projectId);
+            if($moneybirdContactId !== false && isset($contactsResults[$moneybirdContactId])) {
+                return array(
+                    'name' => $contactsResults[$moneybirdContactId],
+                    'id' => $moneybirdContactId,
+                    'object' => $contactObjects[$moneybirdContactId]
+                );
+            }
+        }
+
         $question = new ChoiceQuestion(
             '<question>Choose which contact you want to create the invoice for.</question>',
             array_unique(array_values($contactsResults)),
@@ -501,14 +608,18 @@ class IntegrateCommand extends Command
         $contact = $this->_questionHelper->ask($this->_input, $this->_output, $question);
         $this->_output->writeln('<comment>You have just selected contact: ' . $contact . '</comment>');
 
-        $contactId = false;
+        $contactName = $contactId = false;
         foreach($contactsResults as $contactId=>$contactName) {
             if($contactName == $contact) {
                 break;
             }
         }
 
-        return array('name' => $contactName, 'id' => $contactId, 'object' => $contactObjects[$contactId]);
+        return array(
+            'name' => $contactName,
+            'id' => $contactId,
+            'object' => $contactObjects[$contactId]
+        );
     }
 
     private function getConfigValues()
@@ -553,9 +664,13 @@ class IntegrateCommand extends Command
                 }
             }
 
-            $dumper = new Dumper();
-            $yaml = $dumper->dump($config);
-            file_put_contents(self::CONFIG_FILE, $yaml);
+            try {
+                $dumper = new Dumper();
+                $yaml = $dumper->dump($config);
+                file_put_contents(self::CONFIG_FILE, $yaml);
+            } catch(DumpException $e) {
+                printf("Could not dump the YAML string: %s", $e->getMessage());
+            }
         }
 
         if (file_exists('config.yml')) {
