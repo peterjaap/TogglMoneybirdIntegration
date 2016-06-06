@@ -37,6 +37,8 @@ class IntegrateCommand extends Command
     private $_toggl;
     private $_moneybird;
 
+    private $_workspaceId;
+    private $_workspaceUsers;
 
     protected function configure()
     {
@@ -57,17 +59,18 @@ class IntegrateCommand extends Command
         $this->_moneybird = $this->getMoneybirdApi();
 
         /* Choose Toggl workspace */
-        $workspaceId = $this->getTogglWorkspace();
+        $this->workspaceId = $this->getTogglWorkspace();
 
         /* Choose Toggl project */
-        list($projectName, $projectId) = $this->getTogglProject($workspaceId);
+        list($projectName, $projectId) = $this->getTogglProject($this->workspaceId);
 
         /* Choose date range for Toggl time entries */
         list($dateTo,$dateFrom) = $this->getTogglDateRange();
 
+        $addNamesToInvoice = $this->getAddNamesResponse();
+
         /* Choose which time entries to add to the invoice */
-        $chosenTimeEntries = $this->getTogglTimeEntries($dateTo,$dateFrom,$projectId);
-        var_dump($this->createMoneybirdInvoice(null, $chosenTimeEntries, $dateTo, $dateFrom));
+        $chosenTimeEntries = $this->getTogglTimeEntries($dateTo,$dateFrom,$projectId,$addNamesToInvoice);
 
         /* Choose Moneybird contact to invoice to */
         $moneybirdContact = $this->getMoneybirdContact($projectId);
@@ -95,7 +98,7 @@ class IntegrateCommand extends Command
     {
         $invoice = $this->_moneybird->salesInvoice();
 
-        //$invoice->{'contact_id'} = $moneybirdContact['id'];
+        $invoice->{'contact_id'} = $moneybirdContact['id'];
 
         $moneybirdInvoiceLines = array();
         foreach($chosenTimeEntries as $timeEntry) {
@@ -162,6 +165,18 @@ class IntegrateCommand extends Command
             }
 
             $moneybirdInvoiceLines[] = $invoiceLine;
+        }
+
+        // Merge items with the same description together
+        $descriptions = array();
+        foreach($moneybirdInvoiceLines as $key => $invoiceLine) {
+            $keyInArray = array_search($invoiceLine->description, $descriptions);
+            if(!$keyInArray) {
+                $descriptions[$key] = $invoiceLine->description;
+            } else {
+                $moneybirdInvoiceLines[$keyInArray]->amount = $this->addRelativeTimes($moneybirdInvoiceLines[$keyInArray]->amount, $invoiceLine->amount);
+                unset($moneybirdInvoiceLines[$key]);
+            }
         }
 
         // Add existing lines
@@ -477,7 +492,35 @@ class IntegrateCommand extends Command
         return array($dateTo, $dateFrom);
     }
 
-    private function getTogglTimeEntries($dateTo, $dateFrom, $projectId) {
+    private function getAddNamesResponse() {
+
+        $answers = array('Yes', 'No');
+        $question = new ChoiceQuestion(
+            '<question>Do you want to add the names of the developers to the invoice? [Yes]</question>',
+            $answers,
+            0
+        );
+        $question->setAutocompleterValues(array_values($answers));
+        $question->setErrorMessage('Answer is invalid.');
+
+        $answer = $this->_questionHelper->ask($this->_input, $this->_output, $question);
+        $answerId = array_search($answer, $answers);
+
+        $addNames = (boolean)!$answerId;
+
+        return $addNames;
+    }
+
+    private function getTogglTimeEntries($dateTo, $dateFrom, $projectId, $addNamesToInvoice = false) {
+        if($addNamesToInvoice) {
+            $users = $this->_toggl->GetWorkspaceUsers(array('id' => $this->workspaceId));
+            if($users) {
+                foreach($users as $user) {
+                    $this->_workspaceUsers[$user['id']] = $user;
+                }
+            }
+        }
+
         $this->timeEntriesResults = $this->_toggl->getTimeEntries(array(
             'start_date' => $dateFrom,
             'end_date' => $dateTo,
@@ -487,7 +530,13 @@ class IntegrateCommand extends Command
         $timeEntries = array($allText);
         foreach($this->timeEntriesResults as $timeEntriesResult) {
             if(!isset($timeEntriesResult['pid']) || $timeEntriesResult['pid'] != $projectId) continue;
-            $title = $timeEntriesResult['description'] . ' - duration: ' . gmdate('H:i:s', $timeEntriesResult['duration']);
+            $title = $timeEntriesResult['description'];
+            if($addNamesToInvoice) {
+                if(isset($this->_workspaceUsers[$timeEntriesResult['uid']])) {
+                    $title .= ' (' . $this->_workspaceUsers[$timeEntriesResult['uid']]['email'] . ')';
+                }
+            }
+            $title .=  ' - duration: ' . gmdate('H:i:s', $timeEntriesResult['duration']);
             if(isset($timeEntriesResult['tags']) && count($timeEntriesResult['tags'])>0) {
                 $title .= ' <info>' . implode(', ', $timeEntriesResult['tags']) . '</info>';
             }
