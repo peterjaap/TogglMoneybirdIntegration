@@ -29,6 +29,15 @@ class IntegrateCommand extends Command
         'HR', 'IE', 'IT', 'LT', 'LU', 'LV', 'MT', 'NL', 'PL', 'PT', 'RO', 'SE', 'SI', 'SK'
     );
 
+    private $_input;
+    private $_output;
+    private $_questionHelper;
+
+    private $_config;
+    private $_toggl;
+    private $_moneybird;
+
+
     protected function configure()
     {
         $this
@@ -58,6 +67,7 @@ class IntegrateCommand extends Command
 
         /* Choose which time entries to add to the invoice */
         $chosenTimeEntries = $this->getTogglTimeEntries($dateTo,$dateFrom,$projectId);
+        var_dump($this->createMoneybirdInvoice(null, $chosenTimeEntries, $dateTo, $dateFrom));
 
         /* Choose Moneybird contact to invoice to */
         $moneybirdContact = $this->getMoneybirdContact($projectId);
@@ -85,7 +95,7 @@ class IntegrateCommand extends Command
     {
         $invoice = $this->_moneybird->salesInvoice();
 
-        $invoice->{'contact_id'} = $moneybirdContact['id'];
+        //$invoice->{'contact_id'} = $moneybirdContact['id'];
 
         $moneybirdInvoiceLines = array();
         foreach($chosenTimeEntries as $timeEntry) {
@@ -101,6 +111,18 @@ class IntegrateCommand extends Command
             }
 
             $moneybirdInvoiceLines[] = $invoiceLine;
+        }
+
+        // Merge items with the same description together
+        $descriptions = array();
+        foreach($moneybirdInvoiceLines as $key => $invoiceLine) {
+            $keyInArray = array_search($invoiceLine->description, $descriptions);
+            if(!$keyInArray) {
+                $descriptions[$key] = $invoiceLine->description;
+            } else {
+                $moneybirdInvoiceLines[$keyInArray]->amount = $this->addRelativeTimes($moneybirdInvoiceLines[$keyInArray]->amount, $invoiceLine->amount);
+                unset($moneybirdInvoiceLines[$key]);
+            }
         }
 
         $invoice->details = $moneybirdInvoiceLines;
@@ -788,5 +810,15 @@ class IntegrateCommand extends Command
         $this->apiConnection = $connection;
 
         return new \Picqer\Financials\Moneybird\Moneybird($this->apiConnection);
+    }
+
+    private function addRelativeTimes($a, $b) {
+        list($aHours, $aMinutes) = explode(':', $a);
+        list($bHours, $bMinutes) = explode(':', $b);
+
+        $a = strtotime('+' . $aHours . ' hours +' . $aMinutes . ' minutes',  strtotime(date('Y-m-d 00:00:00')));
+        $b = date('H:i', strtotime('+' . $bHours . ' hours +' . $bMinutes . ' minutes', $a));
+
+        return $b;
     }
 }
