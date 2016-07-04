@@ -840,7 +840,21 @@ class IntegrateCommand extends Command
 
     private function getTogglApi()
     {
-        return TogglClient::factory(array('api_key' => $this->_config['toggl_token'], 'debug' => self::DEBUG_MODE));
+        $tokens = $this->_config['toggl_token'];
+        if(is_array($tokens)) {
+            $question = new ChoiceQuestion(
+                '<question>For which team member do you want to invoice time entries?</question>',
+                $tokens
+            );
+            $question->setAutocompleterValues(array_keys($tokens));
+            $question->setErrorMessage('Answer is invalid.');
+
+            $answer = $this->_questionHelper->ask($this->_input, $this->_output, $question);
+            $token = $tokens[$answer];
+        } else {
+            $token = $tokens;
+        }
+        return TogglClient::factory(array('api_key' => $token, 'debug' => self::DEBUG_MODE));
     }
 
     private function getMoneybirdApi()
