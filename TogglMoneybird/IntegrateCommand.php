@@ -105,7 +105,18 @@ class IntegrateCommand extends Command
         $moneybirdInvoiceLines = array();
         foreach($chosenTimeEntries as $timeEntry) {
             $invoiceLine = $this->_moneybird->salesInvoiceDetail();
-            list($description,$amount) = explode(' - duration: ', $timeEntry);
+            if(stripos($timeEntry,'duration')!==false) {
+                list($description, $amount) = explode(' - duration: ', $timeEntry);
+                list($amount,) = explode(' ', $amount);
+            } else {
+                $description = $timeEntry;
+                $amount = 0;
+            }
+
+            if(empty($description)) {
+                $description = 'No description';
+            }
+
             $invoiceLine->description = $description;
             $invoiceLine->amount = $this->roundTime($amount);
             $invoiceLine->price = $this->_config['hourly_rate'];
@@ -156,8 +167,18 @@ class IntegrateCommand extends Command
         // Add new lines
         foreach($chosenTimeEntries as $timeEntry) {
             $invoiceLine = $this->_moneybird->salesInvoiceDetail();
-            list($description,$amount) = explode(' - duration: ', $timeEntry);
-            list($amount,) = explode(' ', $amount);
+            if(stripos($timeEntry,'duration')!==false) {
+                list($description, $amount) = explode(' - duration: ', $timeEntry);
+                list($amount,) = explode(' ', $amount);
+            } else {
+                $description = $timeEntry;
+                $amount = 0;
+            }
+
+            if(empty($description)) {
+                $description = 'No description';
+            }
+
             $invoiceLine->description = $description;
             $invoiceLine->amount = $this->roundTime($amount);
             $invoiceLine->price = $this->_config['hourly_rate'];
@@ -314,6 +335,9 @@ class IntegrateCommand extends Command
             if(!in_array($timeEntry['id'], $timeEntryIds)) {
                 continue;
             }
+            if(empty($timeEntry['description'])) {
+                $timeEntry['description'] = 'No description';
+            }
             if(!isset($timeEntry['tags']) || !in_array($tag, $timeEntry['tags'])) {
                 if(isset($timeEntry['tags'])) {
                     $tags = array_merge($timeEntry['tags'], array($tag));
@@ -328,6 +352,8 @@ class IntegrateCommand extends Command
                     'id' => $timeEntry['id'],
                     'time_entry' => $timeEntry
                 ));
+
+                $this->_output->writeln('<info>Tagged ' . $timeEntry['description'] . ' as billed.</info>');
             }
         }
     }
@@ -523,7 +549,11 @@ class IntegrateCommand extends Command
         $timeEntries = array($allText);
         foreach($this->timeEntriesResults as $timeEntriesResult) {
             if(!isset($timeEntriesResult['pid']) || $timeEntriesResult['pid'] != $projectId) continue;
-            $title = $timeEntriesResult['description'];
+            if(!empty($timeEntriesResult['description'])) {
+                $title = addslashes($timeEntriesResult['description']);
+            } else {
+                $title = 'No description';
+            }
             if($addNamesToInvoice) {
                 if(isset($this->_currentToggllUser['email'])) {
                     $title .= ' (' . $this->_currentToggllUser['email'] . ')';
