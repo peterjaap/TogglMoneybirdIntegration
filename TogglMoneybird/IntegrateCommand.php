@@ -58,6 +58,8 @@ class IntegrateCommand extends Command
         $this->_toggl = $this->getTogglApi();
         $this->_moneybird = $this->getMoneybirdApi();
 
+        $this->_currentToggllUser = $this->_toggl->GetCurrentUser();
+
         /* Choose Toggl workspace */
         $this->workspaceId = $this->getTogglWorkspace();
 
@@ -512,15 +514,6 @@ class IntegrateCommand extends Command
     }
 
     private function getTogglTimeEntries($dateTo, $dateFrom, $projectId, $addNamesToInvoice = false) {
-        if($addNamesToInvoice) {
-            $users = $this->_toggl->GetWorkspaceUsers(array('id' => $this->workspaceId));
-            if($users) {
-                foreach($users as $user) {
-                    $this->_workspaceUsers[$user['id']] = $user;
-                }
-            }
-        }
-
         $this->timeEntriesResults = $this->_toggl->getTimeEntries(array(
             'start_date' => $dateFrom,
             'end_date' => $dateTo,
@@ -532,8 +525,8 @@ class IntegrateCommand extends Command
             if(!isset($timeEntriesResult['pid']) || $timeEntriesResult['pid'] != $projectId) continue;
             $title = $timeEntriesResult['description'];
             if($addNamesToInvoice) {
-                if(isset($this->_workspaceUsers[$timeEntriesResult['uid']])) {
-                    $title .= ' (' . $this->_workspaceUsers[$timeEntriesResult['uid']]['email'] . ')';
+                if(isset($this->_currentToggllUser['email'])) {
+                    $title .= ' (' . $this->_currentToggllUser['email'] . ')';
                 }
             }
             $title .=  ' - duration: ' . gmdate('H:i:s', $timeEntriesResult['duration']);
