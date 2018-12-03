@@ -428,8 +428,8 @@ class IntegrateCommand extends Command
 
         $workspaceId = false;
         if(count($workspacesResults)==1) {
-            $workspace = array_pop($workspacesResults);
-            $workspaceId = $workspace['id'];
+            $workspace = $workspacesResults;
+            $workspaceId = $workspace[0]['id'];
         } elseif(count($workspacesResults) > 1) {
             $workspaces = array();
             foreach ($workspacesResults as $workspaceResult) {
